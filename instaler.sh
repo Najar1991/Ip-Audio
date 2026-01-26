@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # IPAudio Installer - Clean upgrade path with dependencies
-version="1.0-r20260125-1241"
-ipkurl="https://github.com/Najar1991/Ip-Audio/raw/main/enigma2-plugin-extensions-ipaudio_${version}_all.ipk"
+version="1.0"
+ipkurl="https://github.com/Najar1991/Ip-Audio/raw/main/Ipaudio.ipk"
 
 echo ""
 echo "IPAudio Installer v$version"
@@ -11,13 +11,6 @@ echo "============================"
 # Check root
 if [ "$EUID" -ne 0 ]; then
     echo "Error: Please run as root!"
-    exit 1
-fi
-
-# Test URL
-echo "=== Testing download ==="
-if ! wget --spider "$ipkurl" 2>/dev/null; then
-    echo "ERROR: IPK not found! Check GitHub repository"
     exit 1
 fi
 
@@ -85,15 +78,20 @@ tmp_dir="/tmp/ipaudio-install"
 mkdir -p "$tmp_dir"
 cd "$tmp_dir" || exit 1
 
-echo "=== Downloading v$version ==="
-wget --no-check-certificate -q --show-progress "$ipkurl" -O ipaudio.ipk || { 
+echo "=== Downloading IPAudio v$version ==="
+wget --no-check-certificate -q --show-progress "$ipkurl" -O Ipaudio.ipk
+
+if [ ! -f Ipaudio.ipk ] || [ ! -s Ipaudio.ipk ]; then
     echo "❌ Download failed!"; 
     rm -rf "$tmp_dir"; 
-    exit 1; 
-}
+    exit 1
+fi
+
+echo "✓ Download completed ($(du -h Ipaudio.ipk | cut -f1))"
+echo ""
 
 echo "=== Installing ==="
-opkg install --force-overwrite ./ipaudio.ipk
+opkg install --force-overwrite ./Ipaudio.ipk
 
 if [ $? -eq 0 ]; then
     # Rebuild GStreamer cache
@@ -109,6 +107,23 @@ if [ $? -eq 0 ]; then
     echo "🎉 IPAudio v$version INSTALLED SUCCESSFULLY!"
     echo "====================================="
     echo "- Plugin: /usr/lib/enigma2/python/Plugins/Extensions/IPAudio/"
+    echo "- Playlists: /etc/enigma2/ipaudio/"
+    if [ -n "$backup_dir" ]; then
+        echo "- Backup: $backup_dir"
+    fi
+    echo ""
+    echo "🔄 RESTARTING ENIGMA2 in 3s..."
+    sleep 3
+    killall -9 enigma2
+else
+    echo "❌ Installation FAILED!"
+    echo "Check /var/log/opkg.log for details"
+    rm -rf "$tmp_dir"
+    exit 1
+fi
+
+rm -rf "$tmp_dir"
+exit 0    echo "- Plugin: /usr/lib/enigma2/python/Plugins/Extensions/IPAudio/"
     echo "- Playlists: /etc/enigma2/ipaudio/"
     if [ -n "$backup_dir" ]; then
         echo "- Backup: $backup_dir"
