@@ -1,87 +1,128 @@
-#!/bin/sh
+#!/bin/bash
 
-# ==========================================================
-#  IPAudio Smart Installer
-# ==========================================================
-
-# 1. Configuration
-IPK_URL="https://github.com/Najar1991/Ip-Audio/raw/main/enigma2-plugin-extensions-ipaudio_1.0-r20260125-1241_all.ipk"
-PLUGIN_DIR="/usr/lib/enigma2/python/Plugins/Extensions/IPAudio"
-TMP_IPK="/tmp/ipaudio_installer.ipk"
+# IPAudio Installer - Clean upgrade path with dependencies
+version="1.0-r20260125-1241"
+ipkurl="https://github.com/Najar1991/Ip-Audio/raw/main/enigma2-plugin-extensions-ipaudio_${version}_all.ipk"
 
 echo ""
-echo "#########################################################"
-echo "#      IPAudio SMART INSTALLER - FORCE CLEAN MODE      #"
-echo "#########################################################"
-echo ""
+echo "IPAudio Installer v$version"
+echo "============================"
 
-# 2. Force Clean (Remove old files to prevent crashes)
-if [ -d "$PLUGIN_DIR" ]; then
-    echo "> Found old version. Removing..."
-    rm -rf "$PLUGIN_DIR"
-    echo "> Old folder deleted."
-else
-    echo "> No old folder found (Clean Install)."
+# Check root
+if [ "$EUID" -ne 0 ]; then
+    echo "Error: Please run as root!"
+    exit 1
 fi
 
-# Remove from opkg database to avoid conflicts
-opkg remove --force-depends enigma2-plugin-extensions-ipaudio > /dev/null 2>&1
+# Test URL
+echo "=== Testing download ==="
+if ! wget --spider "$ipkurl" 2>/dev/null; then
+    echo "ERROR: IPK not found! Check GitHub repository"
+    exit 1
+fi
 
-echo ""
+# CHECK & REMOVE PREVIOUS IPAudio ONLY
+echo "=== Checking for previous IPAudio ==="
+if opkg list-installed | grep -q "enigma2-plugin-extensions-ipaudio"; then
+    echo "Previous IPAudio found - removing..."
+    opkg remove enigma2-plugin-extensions-ipaudio --force-depends
+    rm -rf /usr/lib/enigma2/python/Plugins/Extensions/IPAudio
+    echo "✓ IPAudio removed"
+else
+    echo "No previous IPAudio - fresh install"
+fi
 
-# 3. Check and Install Dependencies
-echo "> Checking Dependencies..."
+# Backup playlists ONLY if exist
+echo "=== Backing up playlists ==="
+if [ -d "/etc/enigma2/ipaudio" ] && [ "$(ls -A /etc/enigma2/ipaudio/*.json 2>/dev/null | wc -l)" -gt 0 ]; then
+    backup_dir="/tmp/ipaudiobackup-$(date +%Y%m%d-%H%M%S)"
+    cp -r /etc/enigma2/ipaudio "$backup_dir/"
+    echo "✓ Playlists backed up: $backup_dir"
+fi
 
+# === CHECK & INSTALL DEPENDENCIES ===
+echo "=== Checking Dependencies ==="
+
+# Update package list
+echo "Updating package list..."
+opkg update > /dev/null 2>&1
+
+# Function to install if missing
 install_if_missing() {
-    CMD=$1
-    PKG=$2
-    if ! command -v $CMD >/dev/null 2>&1; then
-        echo "> $CMD not found. Installing $PKG..."
-        opkg update > /dev/null 2>&1
-        opkg install $PKG
+    PKG=$1
+    if ! opkg list-installed | grep -q "^$PKG "; then
+        echo "  → Installing $PKG..."
+        opkg install "$PKG" > /dev/null 2>&1
+        if [ $? -eq 0 ]; then
+            echo "    ✓ $PKG installed"
+        else
+            echo "    ⚠ Warning: Failed to install $PKG (may not be critical)"
+        fi
     else
-        echo "> $CMD already installed."
+        echo "  ✓ $PKG already installed"
     fi
 }
 
-# FFmpeg
-install_if_missing "ffmpeg" "ffmpeg"
+# Core dependencies
+install_if_missing "ffmpeg"
+install_if_missing "gstreamer1.0"
+install_if_missing "gstreamer1.0-plugins-base"
+install_if_missing "gstreamer1.0-plugins-good"
+install_if_missing "gstreamer1.0-plugins-bad"
+install_if_missing "gstreamer1.0-plugins-ugly"
+install_if_missing "gstreamer1.0-libav"
+install_if_missing "python3-core"
+install_if_missing "python3-twisted"
 
-# GStreamer plugins
-GST_PLUGINS="gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-libav"
-for pkg in $GST_PLUGINS; do
-    dpkg -s $pkg >/dev/null 2>&1 || {
-        echo "> $pkg not installed. Installing..."
-        opkg install $pkg
-    }
-done
+# Optional but recommended
+install_if_missing "alsa-utils"
 
-# Python core
-install_if_missing "python3" "python3-core"
-
-echo "> Dependencies checked."
+echo "✓ Dependencies checked"
 echo ""
 
-# 4. Download and Install IPK
-echo "> Downloading new version..."
-wget --no-check-certificate "$IPK_URL" -O $TMP_IPK
+# Download & Install
+tmp_dir="/tmp/ipaudio-install"
+mkdir -p "$tmp_dir"
+cd "$tmp_dir" || exit 1
 
-if [ -f $TMP_IPK ]; then
-    echo "> Installing IPK..."
-    opkg install --force-overwrite $TMP_IPK
-    
-    if [ $? -eq 0 ]; then
-        echo ""
-        echo "#########################################################"
-        echo "#           INSTALLATION SUCCESSFUL                     #"
-        echo "#           RESTARTING ENIGMA2...                      #"
-        echo "#########################################################"
-        rm -f $TMP_IPK
-        sleep 3
-        killall -9 enigma2
-    else
-        echo ">>>> ERROR: Installation failed! Try manual install."
+echo "=== Downloading v$version ==="
+wget --no-check-certificate -q --show-progress "$ipkurl" -O ipaudio.ipk || { 
+    echo "❌ Download failed!"; 
+    rm -rf "$tmp_dir"; 
+    exit 1; 
+}
+
+echo "=== Installing ==="
+opkg install --force-overwrite ./ipaudio.ipk
+
+if [ $? -eq 0 ]; then
+    # Rebuild GStreamer cache
+    echo "=== Rebuilding GStreamer cache ==="
+    rm -rf /root/.cache/gstreamer-1.0/ 2>/dev/null
+    rm -rf /home/root/.cache/gstreamer-1.0/ 2>/dev/null
+    if command -v gst-inspect-1.0 >/dev/null 2>&1; then
+        gst-inspect-1.0 > /dev/null 2>&1
+        echo "✓ GStreamer cache rebuilt"
     fi
+    
+    echo ""
+    echo "🎉 IPAudio v$version INSTALLED SUCCESSFULLY!"
+    echo "====================================="
+    echo "- Plugin: /usr/lib/enigma2/python/Plugins/Extensions/IPAudio/"
+    echo "- Playlists: /etc/enigma2/ipaudio/"
+    if [ -n "$backup_dir" ]; then
+        echo "- Backup: $backup_dir"
+    fi
+    echo ""
+    echo "🔄 RESTARTING ENIGMA2 in 3s..."
+    sleep 3
+    killall -9 enigma2
 else
-    echo ">>>> ERROR: Download Failed! Check URL or Internet connection."
+    echo "❌ Installation FAILED!"
+    echo "Check /var/log/opkg.log for details"
+    rm -rf "$tmp_dir"
+    exit 1
 fi
+
+rm -rf "$tmp_dir"
+exit 0
