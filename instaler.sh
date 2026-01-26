@@ -123,21 +123,4 @@ else
 fi
 
 rm -rf "$tmp_dir"
-exit 0    echo "- Plugin: /usr/lib/enigma2/python/Plugins/Extensions/IPAudio/"
-    echo "- Playlists: /etc/enigma2/ipaudio/"
-    if [ -n "$backup_dir" ]; then
-        echo "- Backup: $backup_dir"
-    fi
-    echo ""
-    echo "🔄 RESTARTING ENIGMA2 in 3s..."
-    sleep 3
-    killall -9 enigma2
-else
-    echo "❌ Installation FAILED!"
-    echo "Check /var/log/opkg.log for details"
-    rm -rf "$tmp_dir"
-    exit 1
-fi
-
-rm -rf "$tmp_dir"
 exit 0
