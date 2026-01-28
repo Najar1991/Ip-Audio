@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# IPAudio Installer - Clean upgrade path with dependencies
+# MixAudio Installer - Clean upgrade path with dependencies
 version="1.0"
-ipkurl="https://github.com/Najar1991/Ip-Audio/raw/main/Ipaudio.ipk"
+ipkurl="https://github.com/Najar1991/Ip-Audio/raw/main/MixAudio.ipk"
 
 echo ""
-echo "IPAudio Installer v$version"
+echo "MixAudio Installer v$version"
 echo "============================"
 
 # Check root
@@ -14,22 +14,27 @@ if [ "$EUID" -ne 0 ]; then
     exit 1
 fi
 
-# CHECK & REMOVE PREVIOUS IPAudio ONLY
-echo "=== Checking for previous IPAudio ==="
-if opkg list-installed | grep -q "enigma2-plugin-extensions-ipaudio"; then
-    echo "Previous IPAudio found - removing..."
-    opkg remove enigma2-plugin-extensions-ipaudio --force-depends
-    rm -rf /usr/lib/enigma2/python/Plugins/Extensions/IPAudio
-    echo "✓ IPAudio removed"
+# CHECK & REMOVE PREVIOUS MixAudio ONLY
+# (We explicitly DO NOT touch the original IPAudio)
+echo "=== Checking for previous MixAudio ==="
+if opkg list-installed | grep -q "enigma2-plugin-extensions-mixaudio"; then
+    echo "Previous MixAudio found - removing..."
+    opkg remove enigma2-plugin-extensions-mixaudio --force-depends
+    rm -rf /usr/lib/enigma2/python/Plugins/Extensions/MixAudio
+    echo "✓ MixAudio removed (Ready for upgrade)"
 else
-    echo "No previous IPAudio - fresh install"
+    echo "No previous MixAudio - fresh install"
 fi
 
-# Backup playlists ONLY if exist
-echo "=== Backing up playlists ==="
-if [ -d "/etc/enigma2/ipaudio" ] && [ "$(ls -A /etc/enigma2/ipaudio/*.json 2>/dev/null | wc -l)" -gt 0 ]; then
-    backup_dir="/tmp/ipaudiobackup-$(date +%Y%m%d-%H%M%S)"
-    cp -r /etc/enigma2/ipaudio "$backup_dir/"
+# Backup playlists ONLY if exist (Specified for MixAudio paths)
+echo "=== Backing up MixAudio playlists ==="
+if [ -d "/etc/enigma2/mixaudio" ]; then
+    backup_dir="/tmp/mixaudiobackup-$(date +%Y%m%d-%H%M%S)"
+    cp -r /etc/enigma2/mixaudio "$backup_dir/" 2>/dev/null
+    # Also backup the json file if it exists in the root of etc/enigma2
+    if [ -f "/etc/enigma2/mixaudio.json" ]; then
+        cp /etc/enigma2/mixaudio.json "$backup_dir/"
+    fi
     echo "✓ Playlists backed up: $backup_dir"
 fi
 
@@ -56,7 +61,7 @@ install_if_missing() {
     fi
 }
 
-# Core dependencies
+# Core dependencies (Same as IPAudio)
 install_if_missing "ffmpeg"
 install_if_missing "gstreamer1.0"
 install_if_missing "gstreamer1.0-plugins-base"
@@ -74,24 +79,25 @@ echo "✓ Dependencies checked"
 echo ""
 
 # Download & Install
-tmp_dir="/tmp/ipaudio-install"
+tmp_dir="/tmp/mixaudio-install"
 mkdir -p "$tmp_dir"
 cd "$tmp_dir" || exit 1
 
-echo "=== Downloading IPAudio v$version ==="
-wget --no-check-certificate -q --show-progress "$ipkurl" -O Ipaudio.ipk
+echo "=== Downloading MixAudio v$version ==="
+# Note: Ensure ipkurl is valid
+wget --no-check-certificate -q --show-progress "$ipkurl" -O MixAudio.ipk
 
-if [ ! -f Ipaudio.ipk ] || [ ! -s Ipaudio.ipk ]; then
-    echo "❌ Download failed!"; 
+if [ ! -f MixAudio.ipk ] || [ ! -s MixAudio.ipk ]; then
+    echo "❌ Download failed! Please check the URL in the script."; 
     rm -rf "$tmp_dir"; 
     exit 1
 fi
 
-echo "✓ Download completed ($(du -h Ipaudio.ipk | cut -f1))"
+echo "✓ Download completed"
 echo ""
 
 echo "=== Installing ==="
-opkg install --force-overwrite ./Ipaudio.ipk
+opkg install --force-overwrite ./MixAudio.ipk
 
 if [ $? -eq 0 ]; then
     # Rebuild GStreamer cache
@@ -103,14 +109,21 @@ if [ $? -eq 0 ]; then
         echo "✓ GStreamer cache rebuilt"
     fi
     
-    echo ""
-    echo "🎉 IPAudio v$version INSTALLED SUCCESSFULLY!"
-    echo "====================================="
-    echo "- Plugin: /usr/lib/enigma2/python/Plugins/Extensions/IPAudio/"
-    echo "- Playlists: /etc/enigma2/ipaudio/"
+    # Restore Playlist if backup existed
     if [ -n "$backup_dir" ]; then
-        echo "- Backup: $backup_dir"
+         echo "=== Restoring Configuration ==="
+         cp -r "$backup_dir"/* /etc/enigma2/mixaudio/ 2>/dev/null
+         if [ -f "$backup_dir/mixaudio.json" ]; then
+            cp "$backup_dir/mixaudio.json" /etc/enigma2/
+         fi
+         echo "✓ Configuration restored"
     fi
+
+    echo ""
+    echo "🎉 MixAudio v$version INSTALLED SUCCESSFULLY!"
+    echo "====================================="
+    echo "- Plugin: /usr/lib/enigma2/python/Plugins/Extensions/MixAudio/"
+    echo "- Config: /etc/enigma2/mixaudio.json"
     echo ""
     echo "🔄 RESTARTING ENIGMA2 in 3s..."
     sleep 3
