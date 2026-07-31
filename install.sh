@@ -1,7 +1,7 @@
 #!/bin/sh
 
 ##################################
-version="1.5"
+version="1.6"
 
 base_url="https://github.com/Najar1991/MixAudio_All/raw/refs/heads/main"
 
